@@ -47,6 +47,11 @@ using namespace rp::standalone::rplidar;
 
 RPlidarDriver * drv = NULL;
 
+
+static int left_degrees = 0;
+static int right_degrees = 360;
+static bool cut_angle = false;
+
 void publish_scan(ros::Publisher *pub,
                   rplidar_response_measurement_node_hq_t *nodes,
                   size_t node_count, ros::Time start,
@@ -81,23 +86,54 @@ void publish_scan(ros::Publisher *pub,
     scan_msg.intensities.resize(node_count);
     scan_msg.ranges.resize(node_count);
     bool reverse_data = (!inverted && reversed) || (inverted && !reversed);
+
+    //先全部置inf，注意：如果初始化是0,则表示范围内无障碍，故不能置0。inf表示无数据 
+    for (size_t i = 0; i < node_count; i++){ 
+        scan_msg.ranges[i] = std::numeric_limits<float>::infinity(); 
+    }
+
     if (!reverse_data) {
         for (size_t i = 0; i < node_count; i++) {
             float read_value = (float) nodes[i].dist_mm_q2/4.0f/1000;
-            if (read_value == 0.0)
-                scan_msg.ranges[i] = std::numeric_limits<float>::infinity();
-            else
-                scan_msg.ranges[i] = read_value;
-            scan_msg.intensities[i] = (float) (nodes[i].quality >> 2);
+            if (cut_angle){
+                if (i<=left_degrees*node_count/360 || i>=right_degrees*node_count/360){
+                    if (read_value == 0.0)
+                        scan_msg.ranges[i] = std::numeric_limits<float>::infinity();
+                    else
+                        scan_msg.ranges[i] = read_value;
+                    scan_msg.intensities[i] = (float) (nodes[i].quality >> 2);
+                }
+            }
+            else {
+                if (read_value == 0.0)
+                    scan_msg.ranges[i] = std::numeric_limits<float>::infinity();
+                else
+                    scan_msg.ranges[i] = read_value;
+                scan_msg.intensities[i] = (float) (nodes[i].quality >> 2);
+            }
+            
         }
     } else {
         for (size_t i = 0; i < node_count; i++) {
             float read_value = (float)nodes[i].dist_mm_q2/4.0f/1000;
-            if (read_value == 0.0)
-                scan_msg.ranges[node_count-1-i] = std::numeric_limits<float>::infinity();
-            else
-                scan_msg.ranges[node_count-1-i] = read_value;
-            scan_msg.intensities[node_count-1-i] = (float) (nodes[i].quality >> 2);
+
+            if (cut_angle){
+                if (i<=left_degrees*node_count/360 || i>=right_degrees*node_count/360){
+                    if (read_value == 0.0)
+                        scan_msg.ranges[node_count-1-i] = std::numeric_limits<float>::infinity();
+                    else
+                        scan_msg.ranges[node_count-1-i] = read_value;
+                    scan_msg.intensities[node_count-1-i] = (float) (nodes[i].quality >> 2);
+                }
+            }
+            else {
+                if (read_value == 0.0)
+                    scan_msg.ranges[node_count-1-i] = std::numeric_limits<float>::infinity();
+                else
+                    scan_msg.ranges[node_count-1-i] = read_value;
+                scan_msg.intensities[node_count-1-i] = (float) (nodes[i].quality >> 2);
+            }
+
         }
     }
 
@@ -208,6 +244,13 @@ int main(int argc, char * argv[]) {
     nh_private.param<bool>("inverted", inverted, false);
     nh_private.param<bool>("angle_compensate", angle_compensate, false);
     nh_private.param<std::string>("scan_mode", scan_mode, std::string());
+
+    nh_private.param<bool>("cut_angle", cut_angle, false);
+
+    if (cut_angle){
+        nh_private.param<int>("left_degrees", left_degrees, 0);
+        nh_private.param<int>("right_degrees", right_degrees, 360);
+    }
 
     ROS_INFO("RPLIDAR running on ROS package rplidar_ros. SDK Version:"RPLIDAR_SDK_VERSION"");
 
